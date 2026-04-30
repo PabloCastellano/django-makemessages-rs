@@ -221,7 +221,7 @@ pub(crate) fn parse_po_file(content: &str) -> IndexMap<String, PoEntry> {
     entries
 }
 
-fn format_entry(entry: &PoEntry, no_location: bool, no_flags: bool, sort_output: bool) -> String {
+fn format_entry(entry: &PoEntry, no_location: bool, no_flags: bool, sort_output: bool, wrap_references: bool) -> String {
     let mut lines = Vec::new();
 
     for comment in &entry.comments {
@@ -233,7 +233,20 @@ fn format_entry(entry: &PoEntry, no_location: bool, no_flags: bool, sort_output:
         if sort_output {
             refs.sort();
         }
-        lines.push(format!("#: {}", refs.join(" ")));
+        if wrap_references {
+            let mut line = String::from("#:");
+            for r in &refs {
+                if line.len() > 2 && line.len() + 1 + r.len() > 80 {
+                    lines.push(line);
+                    line = String::from("#:");
+                }
+                line.push(' ');
+                line.push_str(r);
+            }
+            lines.push(line);
+        } else {
+            lines.push(format!("#: {}", refs.join(" ")));
+        }
     }
 
     if !no_flags && !entry.flags.is_empty() {
@@ -270,6 +283,7 @@ pub struct PoFileOptions {
     pub no_fuzzy_matching: bool,
     pub no_flags: bool,
     pub keep_header: bool,
+    pub wrap_references: bool,
 }
 
 pub fn merge_entries(
@@ -346,7 +360,7 @@ pub fn merge_entries(
     output.push_str("\n\n");
 
     for (_, entry) in &new_entries {
-        output.push_str(&format_entry(entry, options.no_location, options.no_flags, options.sort_output));
+        output.push_str(&format_entry(entry, options.no_location, options.no_flags, options.sort_output, options.wrap_references));
         output.push_str("\n\n");
     }
 
@@ -428,6 +442,7 @@ msgstr "你好"
             no_fuzzy_matching: true,
             no_flags: false,
             keep_header: true,
+            wrap_references: false,
         };
         let result = merge_entries(&extracted, Some(existing), "zh_Hant", &options);
         assert!(result.contains("你好"));

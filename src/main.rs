@@ -50,6 +50,10 @@ struct Cli {
     #[arg(long)]
     keep_header: bool,
 
+    /// Wrap '#:' reference lines at 80 characters (Django-compatible format)
+    #[arg(long)]
+    wrap_references: bool,
+
     /// Exit with error if .po files would be modified (dry-run check)
     #[arg(long)]
     check: bool,
@@ -154,6 +158,7 @@ fn main() -> Result<()> {
         no_fuzzy_matching: cli.no_fuzzy_matching,
         no_flags: cli.no_flags,
         keep_header: cli.keep_header,
+        wrap_references: cli.wrap_references,
     };
 
     let mut changed_files = Vec::new();
