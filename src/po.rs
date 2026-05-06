@@ -221,7 +221,7 @@ pub(crate) fn parse_po_file(content: &str) -> IndexMap<String, PoEntry> {
     entries
 }
 
-fn format_entry(entry: &PoEntry, no_location: bool, no_flags: bool, sort_output: bool) -> String {
+fn format_entry(entry: &PoEntry, no_location: bool, no_flags: bool, sort_output: bool, no_wrap: bool) -> String {
     let mut lines = Vec::new();
 
     for comment in &entry.comments {
@@ -233,7 +233,20 @@ fn format_entry(entry: &PoEntry, no_location: bool, no_flags: bool, sort_output:
         if sort_output {
             refs.sort();
         }
-        lines.push(format!("#: {}", refs.join(" ")));
+        if no_wrap {
+            lines.push(format!("#: {}", refs.join(" ")));
+        } else {
+            let mut line = String::from("#:");
+            for r in &refs {
+                if line.len() > 2 && line.len() + 1 + r.len() >= 80 {
+                    lines.push(line);
+                    line = String::from("#:");
+                }
+                line.push(' ');
+                line.push_str(r);
+            }
+            lines.push(line);
+        }
     }
 
     if !no_flags && !entry.flags.is_empty() {
@@ -263,7 +276,6 @@ pub struct PoFileOptions {
     pub no_location: bool,
     #[allow(dead_code)]
     pub no_obsolete: bool,
-    #[allow(dead_code)]
     pub no_wrap: bool,
     pub sort_output: bool,
     #[allow(dead_code)]
@@ -346,7 +358,7 @@ pub fn merge_entries(
     output.push_str("\n\n");
 
     for (_, entry) in &new_entries {
-        output.push_str(&format_entry(entry, options.no_location, options.no_flags, options.sort_output));
+        output.push_str(&format_entry(entry, options.no_location, options.no_flags, options.sort_output, options.no_wrap));
         output.push_str("\n\n");
     }
 
@@ -438,5 +450,74 @@ msgstr "你好"
     #[test]
     fn test_format_po_string_simple() {
         assert_eq!(format_po_string("msgid", "Hello"), r#"msgid "Hello""#);
+    }
+
+    fn make_entry(refs: Vec<&str>) -> PoEntry {
+        PoEntry {
+            comments: Vec::new(),
+            references: refs.into_iter().map(String::from).collect(),
+            flags: Vec::new(),
+            msgctxt: None,
+            msgid: "x".to_string(),
+            msgid_plural: None,
+            msgstr: vec![String::new()],
+        }
+    }
+
+    #[test]
+    fn test_wrap_references_short_fits_one_line() {
+        let entry = make_entry(vec!["a.py:1", "b.py:2"]);
+        let out = format_entry(&entry, false, false, false, false);
+        let ref_lines: Vec<&str> = out.lines().filter(|l| l.starts_with("#:")).collect();
+        assert_eq!(ref_lines, vec!["#: a.py:1 b.py:2"]);
+    }
+
+    #[test]
+    fn test_wrap_references_breaks_at_80() {
+        // Build refs so adding the next ref would make the line >= 80.
+        // "#: " (3) + "aaaa.py:1" (9) repeated. After 7 refs separated by spaces:
+        // 2 + (1+9)*7 = 72; adding an 8th: 72 + 1 + 9 = 82 >= 80 -> wrap.
+        let refs: Vec<&str> = vec![
+            "aaaa.py:1", "aaaa.py:2", "aaaa.py:3", "aaaa.py:4",
+            "aaaa.py:5", "aaaa.py:6", "aaaa.py:7", "aaaa.py:8",
+        ];
+        let entry = make_entry(refs);
+        let out = format_entry(&entry, false, false, false, false);
+        let ref_lines: Vec<&str> = out.lines().filter(|l| l.starts_with("#:")).collect();
+        assert_eq!(ref_lines.len(), 2);
+        for l in &ref_lines {
+            // For this input (9-char refs), all wrapped lines fit in < 80 chars.
+            // Note: a single ref ≥ 77 chars on a fresh "#:" line CAN produce a
+            // line of exactly 80 chars; that is covered by test_wrap_references_exact_80_wraps.
+            assert!(l.len() < 80, "line too long: {} ({})", l, l.len());
+        }
+    }
+
+    #[test]
+    fn test_wrap_references_exact_80_wraps() {
+        // Construct a ref that puts the line exactly at 80 chars; xgettext/Django
+        // wrap when the result would be >= 80, so this must split.
+        // "#:" (2) + " " (1) + ref => 80 means ref length = 77.
+        let long_ref = format!("a/{}.py:1", "x".repeat(70));
+        assert_eq!(long_ref.len(), 77);
+        let entry = make_entry(vec!["a.py:1", &long_ref]);
+        let out = format_entry(&entry, false, false, false, false);
+        let ref_lines: Vec<&str> = out.lines().filter(|l| l.starts_with("#:")).collect();
+        assert_eq!(ref_lines.len(), 2);
+        assert_eq!(ref_lines[0], "#: a.py:1");
+        assert_eq!(ref_lines[1], format!("#: {long_ref}"));
+    }
+
+    #[test]
+    fn test_no_wrap_keeps_single_line() {
+        let refs: Vec<&str> = vec![
+            "aaaa.py:1", "aaaa.py:2", "aaaa.py:3", "aaaa.py:4",
+            "aaaa.py:5", "aaaa.py:6", "aaaa.py:7", "aaaa.py:8",
+        ];
+        let entry = make_entry(refs);
+        let out = format_entry(&entry, false, false, false, true);
+        let ref_lines: Vec<&str> = out.lines().filter(|l| l.starts_with("#:")).collect();
+        assert_eq!(ref_lines.len(), 1);
+        assert!(ref_lines[0].len() > 80);
     }
 }
