@@ -486,6 +486,9 @@ msgstr "你好"
         let ref_lines: Vec<&str> = out.lines().filter(|l| l.starts_with("#:")).collect();
         assert_eq!(ref_lines.len(), 2);
         for l in &ref_lines {
+            // For this input (9-char refs), all wrapped lines fit in < 80 chars.
+            // Note: a single ref ≥ 77 chars on a fresh "#:" line CAN produce a
+            // line of exactly 80 chars; that is covered by test_wrap_references_exact_80_wraps.
             assert!(l.len() < 80, "line too long: {} ({})", l, l.len());
         }
     }
